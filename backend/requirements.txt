@@ -1,0 +1,11 @@
+fastapi==0.128.8
+uvicorn==0.49.0
+supabase==2.31.0
+python-dotenv==1.2.1
+pydantic==2.12.5
+python-jose==3.5.0
+passlib==1.7.4
+bcrypt==5.0.0
+qrcode==8.2
+httpx==0.28.1
+python-dateutil==2.9.0.post0
