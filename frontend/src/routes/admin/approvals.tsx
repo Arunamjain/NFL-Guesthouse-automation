@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -13,19 +13,42 @@ import { useApp } from "@/lib/app-store";
 import { cn } from "@/lib/utils";
 import type { Booking, RoomType } from "@/types";
 import { formatDate } from "@/utils/formatters";
+import { getBookings, approveBooking, rejectBooking } from "@/services/bookingService";
+import { api } from "@/services/api";
 
 export const Route = createFileRoute("/admin/approvals")({ component: ApprovalsPage });
 
 const TABS = ["All", "Pending", "Approved", "Rejected"] as const;
 
 function ApprovalsPage() {
-  const { bookings, rooms, updateBooking } = useApp();
+  const { currentUser } = useApp();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<typeof TABS[number]>("Pending");
   const [view, setView] = useState<Booking | null>(null);
   const [approve, setApprove] = useState<Booking | null>(null);
   const [reject, setReject] = useState<Booking | null>(null);
   const [reason, setReason] = useState("");
   const [appr, setAppr] = useState({ roomType: "" as RoomType | "", roomNumber: "", remarks: "" });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [bookingsData, roomsData] = await Promise.all([
+          getBookings(),
+          api.get("/admin/rooms"),
+        ]);
+        setBookings(bookingsData);
+        setRooms(roomsData.data);
+      } catch (err) {
+        console.error("Failed to fetch data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const rows = useMemo(() => bookings.filter((b) => {
     if (tab === "All") return true;
@@ -42,17 +65,46 @@ function ApprovalsPage() {
     setApprove(b);
   };
 
-  const doApprove = () => {
+  const doApprove = async () => {
     if (!approve || !appr.roomType || !appr.roomNumber) return toast.error("Select room type and number");
-    updateBooking(approve.id, { hrStatus: "Approved", bookingStatus: "Payment Pending", paymentStatus: "Payment Pending", roomType: appr.roomType as RoomType, roomNumber: appr.roomNumber, hrRemarks: appr.remarks });
-    toast.success("Booking approved. Employee can now complete payment.");
-    setApprove(null);
+    try {
+      await approveBooking(approve.id, {
+        roomType: appr.roomType,
+        roomNumber: appr.roomNumber,
+        remarks: appr.remarks,
+      }, currentUser?.id || "");
+      setBookings((prev) => prev.map((b) => b.id === approve.id ? {
+        ...b,
+        hrStatus: "Approved",
+        bookingStatus: "Payment Pending",
+        paymentStatus: "Payment Pending",
+        roomType: appr.roomType as RoomType,
+        roomNumber: appr.roomNumber,
+        hrRemarks: appr.remarks,
+      } : b));
+      toast.success("Booking approved. Employee can now complete payment.");
+      setApprove(null);
+    } catch (err) {
+      toast.error("Failed to approve booking");
+    }
   };
-  const doReject = () => {
+
+  const doReject = async () => {
     if (!reject || !reason.trim()) return toast.error("Reason required");
-    updateBooking(reject.id, { hrStatus: "Rejected", bookingStatus: "Rejected", hrRemarks: reason });
-    toast.success("Booking request rejected with HR remarks.");
-    setReject(null); setReason("");
+    try {
+      await rejectBooking(reject.id, reason, currentUser?.id || "");
+      setBookings((prev) => prev.map((b) => b.id === reject.id ? {
+        ...b,
+        hrStatus: "Rejected",
+        bookingStatus: "Rejected",
+        hrRemarks: reason,
+      } : b));
+      toast.success("Booking request rejected with HR remarks.");
+      setReject(null);
+      setReason("");
+    } catch (err) {
+      toast.error("Failed to reject booking");
+    }
   };
 
   const cols: Column<Booking>[] = [
@@ -70,8 +122,16 @@ function ApprovalsPage() {
         <Button size="sm" variant="success" disabled={b.hrStatus !== "Pending Approval"} onClick={() => openApprove(b)}>Approve</Button>
         <Button size="sm" variant="danger" disabled={b.hrStatus !== "Pending Approval"} onClick={() => setReject(b)}>Reject</Button>
       </div>
-    ) },
+    )},
   ];
+
+  if (loading) return (
+    <DashboardLayout requiredRole="admin">
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Loading approvals...</p>
+      </div>
+    </DashboardLayout>
+  );
 
   return (
     <DashboardLayout requiredRole="admin">
@@ -124,7 +184,9 @@ function ApprovalsPage() {
             </SelectField>
             <SelectField label="Room Number" value={appr.roomNumber} onChange={(e) => setAppr({ ...appr, roomNumber: e.target.value })}>
               <option value="">Select…</option>
-              {rooms.filter((r) => r.guestHouseId === approve.guestHouseId && r.status === "Available" && (!appr.roomType || r.roomType === appr.roomType)).map((r) => <option key={r.id} value={r.number}>{r.number}</option>)}
+              {rooms.filter((r) => r.guest_house_id === approve.guestHouseId && r.is_active).map((r) => (
+                <option key={r.id} value={r.room_number}>{r.room_number}</option>
+              ))}
             </SelectField>
             <TextAreaField label="HR Remarks" value={appr.remarks} onChange={(e) => setAppr({ ...appr, remarks: e.target.value })} />
           </div>

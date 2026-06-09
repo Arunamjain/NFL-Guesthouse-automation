@@ -1,23 +1,60 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckCircle2, Download, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/common/Button";
 import { QRPassCard } from "@/components/payment/QRPassCard";
 import { Modal } from "@/components/common/Modal";
-import { useApp } from "@/lib/app-store";
+import { getBookings } from "@/services/bookingService";
+import { api } from "@/services/api";
 
 export const Route = createFileRoute("/employee/qr-pass/$bookingId")({ component: QRPassPage });
 
 function QRPassPage() {
   const { bookingId } = Route.useParams();
-  const { bookings } = useApp();
   const navigate = useNavigate();
-  const b = bookings.find((x) => x.id === bookingId);
+  const [b, setB] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [emailModal, setEmailModal] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const bookingsList = await getBookings();
+        const found = bookingsList.find((x) => x.id === bookingId);
+        if (found) {
+          // If payment verified, generate QR pass in database
+          if (found.paymentStatus === "Payment Verified") {
+            try {
+              await api.post(`/qr/${bookingId}/generate`);
+            } catch (err) {
+              console.log("QR already exists or generation returned status code", err);
+            }
+          }
+          setB(found);
+        }
+      } catch (err) {
+        console.error("Error loading booking details for QR", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [bookingId]);
+
+  if (loading) {
+    return (
+      <DashboardLayout requiredRole="employee">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading QR pass...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   if (!b) return <DashboardLayout requiredRole="employee"><p>Booking not found.</p></DashboardLayout>;
-  if (b.bookingStatus !== "Confirmed") return <DashboardLayout requiredRole="employee"><p className="text-sm">QR pass becomes available after payment verification.</p></DashboardLayout>;
+  if (b.paymentStatus !== "Payment Verified") return <DashboardLayout requiredRole="employee"><p className="text-sm">QR pass becomes available after payment verification.</p></DashboardLayout>;
 
   return (
     <DashboardLayout requiredRole="employee">

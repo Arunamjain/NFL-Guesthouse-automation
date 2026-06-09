@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { BedDouble, CalendarCheck, CheckCircle2, CreditCard, MessageSquare, TrendingUp, Users, XCircle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -9,27 +9,48 @@ import { ChartCard } from "@/components/dashboard/ChartCard";
 import { DataTable, type Column } from "@/components/common/DataTable";
 import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { useApp } from "@/lib/app-store";
 import type { Booking } from "@/types";
 import { formatDate } from "@/utils/formatters";
+import { getBookings } from "@/services/bookingService";
+import { api } from "@/services/api";
 
 export const Route = createFileRoute("/admin/dashboard")({ component: AdminDashboard });
 
 const COLORS = ["#1e40af", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
 function AdminDashboard() {
-  const { bookings, feedback } = useApp();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [bookingsData, statsData] = await Promise.all([
+          getBookings(),
+          api.get("/admin/dashboard"),
+        ]);
+        setBookings(bookingsData);
+        setDashboardStats(statsData.data);
+      } catch (err) {
+        console.error("Failed to fetch dashboard data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const stats = useMemo(() => ({
-    total: bookings.length,
-    pending: bookings.filter((b) => b.hrStatus === "Pending Approval").length,
-    approved: bookings.filter((b) => b.hrStatus === "Approved").length,
+    total: dashboardStats?.total_bookings || bookings.length,
+    pending: dashboardStats?.pending_approvals || 0,
+    approved: dashboardStats?.approved_bookings || 0,
     rejected: bookings.filter((b) => b.hrStatus === "Rejected").length,
     payPending: bookings.filter((b) => b.paymentStatus === "Payment Verification Pending").length,
-    payVerified: bookings.filter((b) => b.paymentStatus === "Payment Verified").length,
+    payVerified: dashboardStats?.verified_payments || 0,
     occupancy: 72,
-    avgFb: (feedback.reduce((s, f) => s + f.overall, 0) / Math.max(feedback.length, 1)).toFixed(1),
-  }), [bookings, feedback]);
+    avgFb: "0.0",
+  }), [bookings, dashboardStats]);
 
   const monthly = [
     { month: "Jan", bookings: 12 }, { month: "Feb", bookings: 18 }, { month: "Mar", bookings: 22 },
@@ -55,6 +76,14 @@ function AdminDashboard() {
     { key: "stat", header: "Status", render: (b) => <StatusBadge status={b.bookingStatus} /> },
     { key: "act", header: "", render: () => <Link to="/admin/approvals"><Button size="sm" variant="secondary">Review</Button></Link> },
   ];
+
+  if (loading) return (
+    <DashboardLayout requiredRole="admin">
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Loading dashboard...</p>
+      </div>
+    </DashboardLayout>
+  );
 
   return (
     <DashboardLayout requiredRole="admin">

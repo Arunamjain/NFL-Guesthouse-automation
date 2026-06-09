@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -10,20 +10,37 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { Modal } from "@/components/common/Modal";
 import { FormInput } from "@/components/forms/FormInput";
 import { SelectField } from "@/components/forms/SelectField";
-import { useApp } from "@/lib/app-store";
 import type { Room, RoomStatus, RoomType, GuestHouseId } from "@/types";
 import { formatINR } from "@/utils/formatters";
+import { getRooms, addRoom, updateRoom } from "@/services/roomService";
 
 export const Route = createFileRoute("/admin/rooms")({ component: RoomsPage });
 
 const empty: Omit<Room, "id"> = { number: "", guestHouseId: "vasundra", roomType: "Standard Room", category: "Non-Executive", capacity: 2, price: 1500, status: "Available" };
 
 function RoomsPage() {
-  const { rooms, addRoom, updateRoom } = useApp();
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ gh: "All", type: "All", status: "All", cat: "All" });
   const [add, setAdd] = useState(false);
   const [edit, setEdit] = useState<Room | null>(null);
   const [form, setForm] = useState({ ...empty });
+
+  const loadRooms = async () => {
+    setLoading(true);
+    try {
+      const data = await getRooms();
+      setRooms(data);
+    } catch (err) {
+      toast.error("Failed to load rooms");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadRooms();
+  }, []);
 
   const rows = useMemo(() => rooms.filter((r) =>
     (filters.gh === "All" || r.guestHouseId === filters.gh) &&
@@ -31,18 +48,40 @@ function RoomsPage() {
     (filters.status === "All" || r.status === filters.status) &&
     (filters.cat === "All" || r.category === filters.cat)), [rooms, filters]);
 
-  const saveNew = () => {
+  const saveNew = async () => {
     if (!form.number) return toast.error("Room number required");
-    addRoom({ ...form, id: `r${Date.now()}` });
-    toast.success("Room added.");
-    setAdd(false); setForm({ ...empty });
+    try {
+      await addRoom(form);
+      toast.success("Room added.");
+      setAdd(false);
+      setForm({ ...empty });
+      loadRooms();
+    } catch (err) {
+      toast.error("Failed to add room");
+    }
   };
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!edit) return;
-    updateRoom(edit.id, form);
-    toast.success("Room updated.");
-    setEdit(null);
+    try {
+      await updateRoom(edit.id, form);
+      toast.success("Room updated.");
+      setEdit(null);
+      loadRooms();
+    } catch (err) {
+      toast.error("Failed to update room");
+    }
   };
+
+  const markStatus = async (room: Room, status: RoomStatus) => {
+    try {
+      await updateRoom(room.id, { status });
+      toast.success(`Room marked as ${status.toLowerCase()}.`);
+      loadRooms();
+    } catch (err) {
+      toast.error("Failed to update status");
+    }
+  };
+
 
   const cols: Column<Room>[] = [
     { key: "num", header: "Room", render: (r) => <span className="font-mono text-sm">{r.number}</span> },
@@ -55,8 +94,8 @@ function RoomsPage() {
     { key: "act", header: "Actions", render: (r) => (
       <div className="flex flex-wrap gap-1.5">
         <Button size="sm" variant="secondary" onClick={() => { setForm(r); setEdit(r); }}>Edit</Button>
-        <Button size="sm" variant="danger" onClick={() => { updateRoom(r.id, { status: "Maintenance" }); toast.success("Room marked as maintenance."); }}>Maintenance</Button>
-        <Button size="sm" variant="success" onClick={() => { updateRoom(r.id, { status: "Available" }); toast.success("Room marked as available."); }}>Available</Button>
+        <Button size="sm" variant="danger" onClick={() => markStatus(r, "Maintenance")}>Maintenance</Button>
+        <Button size="sm" variant="success" onClick={() => markStatus(r, "Available")}>Available</Button>
       </div>
     ) },
   ];
@@ -81,6 +120,17 @@ function RoomsPage() {
       </SelectField>
     </div>
   );
+
+  if (loading) {
+    return (
+      <DashboardLayout requiredRole="admin">
+        <PageHeader title="Room Management" subtitle="Manage rooms across guest houses." />
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading rooms...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout requiredRole="admin">

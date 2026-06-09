@@ -1,24 +1,74 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SearchInput } from "@/components/common/SearchInput";
 import { GuestHouseCard } from "@/components/guesthouse/GuestHouseCard";
 import { Modal } from "@/components/common/Modal";
 import { Button } from "@/components/common/Button";
-import { mockGuestHouses } from "@/data/mockGuestHouses";
-import { useApp } from "@/lib/app-store";
-import type { GuestHouse } from "@/types";
+import { api } from "@/services/api";
+import { getRooms } from "@/services/roomService";
+import type { GuestHouse, Room } from "@/types";
 
 export const Route = createFileRoute("/employee/guest-houses")({ component: GHListPage });
 
+
 function GHListPage() {
-  const { rooms } = useApp();
+  const [guestHouses, setGuestHouses] = useState<GuestHouse[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("All");
   const [availFor, setAvailFor] = useState<GuestHouse | null>(null);
 
-  const items = useMemo(() => mockGuestHouses.filter((g) => g.name.toLowerCase().includes(q.toLowerCase())), [q]);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [ghRes, roomsData] = await Promise.all([
+          api.get("/admin/guest-houses"),
+          getRooms()
+        ]);
+        
+        const mapped = ghRes.data.map((gh: any) => {
+          const id = gh.name.toLowerCase().includes("vasundra") ? "vasundra" : "dangoti";
+          const ghRooms = roomsData.filter(r => r.guestHouseId === id);
+          const availableRoomsCount = ghRooms.filter(r => r.status === "Available").length;
+          
+          return {
+            id,
+            name: gh.name,
+            location: gh.address || "Corporate Colony",
+            description: gh.description || "Premium company guest house.",
+            image: gh.name.toLowerCase().includes("vasundra") 
+              ? "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80"
+              : "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=1200&q=80",
+            facilities: gh.amenities || ["Wi-Fi", "Parking", "Security", "Food", "Housekeeping", "Reception"],
+            availableRooms: availableRoomsCount
+          };
+        });
+        setGuestHouses(mapped);
+        setRooms(roomsData);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const items = useMemo(() => guestHouses.filter((g) => g.name.toLowerCase().includes(q.toLowerCase())), [guestHouses, q]);
+
+  if (loading) {
+    return (
+      <DashboardLayout requiredRole="employee">
+        <PageHeader title="Available Guest Houses" subtitle="Select a guest house and request HR approval for your stay." />
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading guest houses...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout requiredRole="employee">

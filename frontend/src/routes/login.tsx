@@ -5,7 +5,7 @@ import { Button } from "@/components/common/Button";
 import { FormInput } from "@/components/forms/FormInput";
 import { Modal } from "@/components/common/Modal";
 import { useApp } from "@/lib/app-store";
-import { mockEmployees } from "@/data/mockEmployees";
+import { login as authLogin } from "@/services/authService";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/types";
 
@@ -24,21 +24,56 @@ function LoginPage() {
   const [role, setRole] = useState<Role>(defaultRole ?? "employee");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<{ id?: string; pw?: string }>({});
+  const [errors, setErrors] = useState<{ id?: string; pw?: string; general?: string }>({});
+  const [loading, setLoading] = useState(false);
   const [forgot, setForgot] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const errs: typeof errors = {};
-    if (!identifier.trim()) errs.id = "Employee ID or email is required";
-    if (!password.trim()) errs.pw = "Password is required";
-    if (Object.keys(errs).length) { setErrors(errs); return; }
-    const user = role === "admin"
-      ? mockEmployees.find((e) => e.role === "admin")!
-      : mockEmployees.find((e) => e.role === "employee" && (e.id === identifier || e.email === identifier)) ?? mockEmployees[0];
-    login({ ...user, role });
-    navigate({ to: role === "admin" ? "/admin/dashboard" : "/employee/dashboard" });
-  };
+  const submit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  const errs: typeof errors = {};
+  if (!identifier.trim()) errs.id = "Employee ID or email is required";
+  if (!password.trim()) errs.pw = "Password is required";
+  if (Object.keys(errs).length) { setErrors(errs); return; }
+
+  setLoading(true);
+  setErrors({});
+
+  try {
+    const { user, profile } = await authLogin({ identifier, password, role });
+    
+    // Map Supabase profile to Employee shape the app expects
+    // Map Supabase profile to Employee shape the app expects
+    // Map Supabase profile to Employee shape the app expects
+const categoryMap: Record<string, "Executive Employee" | "Non-Executive Employee"> = {
+  A: "Executive Employee",
+  B: "Executive Employee", 
+  C: "Non-Executive Employee",
+};
+
+const employeeData = {
+  id: user.id,
+  name: profile.full_name || user.email || "User",
+  email: user.email || "",
+  role: (profile.role === "hr" ? "admin" : profile.role) as Role,
+  department: profile.department || "",
+  designation: profile.designation || "",
+  category: categoryMap[profile.category] || "Non-Executive Employee",
+};
+
+    login(employeeData);
+    
+    const destination = profile.role === "admin" || profile.role === "hr" 
+      ? "/admin/dashboard" 
+      : "/employee/dashboard";
+      
+    navigate({ to: destination });
+    
+  } catch (err: any) {
+    setErrors({ general: err.message || "Login failed. Check your credentials." });
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <PublicLayout>
@@ -55,16 +90,37 @@ function LoginPage() {
             ))}
           </div>
           <form className="mt-6 space-y-4" onSubmit={submit}>
-            <FormInput label={role === "admin" ? "Admin ID / Email" : "Employee ID / Email"} placeholder={role === "admin" ? "Enter admin ID or email" : "Enter your employee ID or email"} value={identifier} onChange={(e) => setIdentifier(e.target.value)} error={errors.id} />
-            <FormInput label="Password" type="password" placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} error={errors.pw} />
+            <FormInput 
+              label={role === "admin" ? "Admin ID / Email" : "Employee ID / Email"} 
+              placeholder={role === "admin" ? "Enter admin ID or email" : "Enter your employee ID or email"} 
+              value={identifier} 
+              onChange={(e) => setIdentifier(e.target.value)} 
+              error={errors.id} 
+            />
+            <FormInput 
+              label="Password" 
+              type="password" 
+              placeholder="Enter your password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              error={errors.pw} 
+            />
+            {errors.general && (
+              <p className="text-sm text-red-500">{errors.general}</p>
+            )}
             <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center gap-2"><input type="checkbox" className="rounded" /> Remember me</label>
-              <button type="button" onClick={() => setForgot(true)} className="text-primary hover:underline">Forgot password?</button>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" className="rounded" /> Remember me
+              </label>
+              <button type="button" onClick={() => setForgot(true)} className="text-primary hover:underline">
+                Forgot password?
+              </button>
             </div>
-            <Button type="submit" fullWidth size="lg">Login</Button>
+            <Button type="submit" fullWidth size="lg" disabled={loading}>
+              {loading ? "Logging in..." : "Login"}
+            </Button>
             <Link to="/"><Button type="button" variant="secondary" fullWidth>Back to Home</Button></Link>
           </form>
-          <p className="text-xs text-muted-foreground mt-4">Demo: any credentials work. Role selector controls the dashboard you land on.</p>
         </div>
         <div className="hidden lg:block">
           <img src="https://images.unsplash.com/photo-1564501049412-61c2a3083791?auto=format&fit=crop&w=1200&q=80" alt="Hotel" className="rounded-2xl shadow-xl" />

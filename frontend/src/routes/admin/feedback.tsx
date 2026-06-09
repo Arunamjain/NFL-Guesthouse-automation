@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Star, ThumbsDown, ThumbsUp, Sparkles } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -10,22 +10,70 @@ import { DataTable, type Column } from "@/components/common/DataTable";
 import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Modal } from "@/components/common/Modal";
-import { useApp } from "@/lib/app-store";
 import type { Feedback } from "@/types";
 import { formatDate } from "@/utils/formatters";
+import { getFeedback } from "@/services/feedbackService";
 
 export const Route = createFileRoute("/admin/feedback")({ component: AdminFeedbackPage });
 
 function AdminFeedbackPage() {
-  const { feedback } = useApp();
+  const [feedback, setFeedback] = useState<Feedback[]>([]);
+  const [loading, setLoading] = useState(true);
   const [view, setView] = useState<Feedback | null>(null);
-  const avg = (k: keyof Feedback) => (feedback.reduce((s, f) => s + (f[k] as number), 0) / Math.max(feedback.length, 1)).toFixed(1);
 
-  const trend = [
-    { month: "Jan", r: 4.0 }, { month: "Feb", r: 4.1 }, { month: "Mar", r: 4.3 },
-    { month: "Apr", r: 3.9 }, { month: "May", r: 4.2 }, { month: "Jun", r: 4.4 },
-  ];
-  const ghRating = [{ gh: "Vasundra", r: 4.4 }, { gh: "Dangoti", r: 4.1 }];
+  const loadFeedback = async () => {
+    try {
+      const data = await getFeedback();
+      setFeedback(data);
+    } catch (err) {
+      console.error("Failed to load feedback", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFeedback();
+  }, []);
+
+  const avg = (k: keyof Feedback) => {
+    if (feedback.length === 0) return "0.0";
+    const sum = feedback.reduce((s, f) => s + ((f[k] as number) || 0), 0);
+    return (sum / feedback.length).toFixed(1);
+  };
+
+  const trend = useMemo(() => {
+    // Generate trend dynamically from actual feedback
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthRatings: Record<string, number[]> = {};
+    feedback.forEach((f) => {
+      if (!f.submittedAt) return;
+      const mIdx = new Date(f.submittedAt).getMonth();
+      const mName = months[mIdx];
+      if (!monthRatings[mName]) monthRatings[mName] = [];
+      monthRatings[mName].push(f.overall);
+    });
+
+    return months.map((m) => {
+      const ratings = monthRatings[m] || [];
+      const avgRating = ratings.length ? ratings.reduce((s, r) => s + r, 0) / ratings.length : 4.0;
+      return { month: m, r: parseFloat(avgRating.toFixed(1)) };
+    });
+  }, [feedback]);
+
+  const ghRating = useMemo(() => {
+    const ratings: Record<string, number[]> = { "Vasundra": [], "Dangoti": [] };
+    feedback.forEach((f) => {
+      const name = f.guestHouseName.includes("Vasundra") ? "Vasundra" : "Dangoti";
+      if (!ratings[name]) ratings[name] = [];
+      ratings[name].push(f.overall);
+    });
+    return Object.entries(ratings).map(([gh, list]) => ({
+      gh,
+      r: list.length ? parseFloat((list.reduce((s, r) => s + r, 0) / list.length).toFixed(1)) : 4.0
+    }));
+  }, [feedback]);
+
 
   const cols: Column<Feedback>[] = [
     { key: "e", header: "Employee", render: (f) => f.employeeName },
@@ -38,6 +86,17 @@ function AdminFeedbackPage() {
     { key: "s", header: "Sentiment", render: (f) => <StatusBadge status={f.sentiment} /> },
     { key: "act", header: "", render: (f) => <Button size="sm" variant="secondary" onClick={() => setView(f)}>View Full</Button> },
   ];
+
+  if (loading) {
+    return (
+      <DashboardLayout requiredRole="admin">
+        <PageHeader title="Feedback Review" subtitle="Track sentiment and ratings across the guest houses." />
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading feedback...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout requiredRole="admin">

@@ -1,15 +1,42 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Button } from "@/components/common/Button";
 import { EmptyState } from "@/components/common/EmptyState";
 import { useApp } from "@/lib/app-store";
+import type { Booking } from "@/types";
+import { getMyBookings } from "@/services/bookingService";
 
 export const Route = createFileRoute("/employee/qr-pass")({ component: QRListPage });
 
 function QRListPage() {
-  const { bookings, currentUser } = useApp();
-  const confirmed = bookings.filter((b) => b.employeeId === currentUser?.id && b.bookingStatus === "Confirmed");
+  const { currentUser } = useApp();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      getMyBookings(currentUser.id)
+        .then(setBookings)
+        .catch(console.error)
+        .finally(() => setLoading(false));
+    }
+  }, [currentUser]);
+
+  const confirmed = bookings.filter((b) => b.bookingStatus === "Confirmed" || b.paymentStatus === "Payment Verified");
+
+  if (loading) {
+    return (
+      <DashboardLayout requiredRole="employee">
+        <PageHeader title="QR Passes" subtitle="View digital passes for your confirmed bookings." />
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading QR passes...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
 
   return (
     <DashboardLayout requiredRole="employee">

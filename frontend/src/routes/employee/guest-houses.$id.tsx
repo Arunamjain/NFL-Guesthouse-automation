@@ -1,19 +1,61 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { MapPin } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/common/Button";
 import { RoomTypeCard } from "@/components/guesthouse/RoomTypeCard";
-import { mockGuestHouses } from "@/data/mockGuestHouses";
+import { api } from "@/services/api";
+import type { GuestHouse } from "@/types";
 
 export const Route = createFileRoute("/employee/guest-houses/$id")({ component: GHDetail });
 
 function GHDetail() {
   const { id } = Route.useParams();
-  const gh = mockGuestHouses.find((g) => g.id === id);
+  const [gh, setGh] = useState<GuestHouse | null>(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  if (!gh) return <DashboardLayout requiredRole="employee"><p>Guest house not found.</p></DashboardLayout>;
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api.get("/admin/guest-houses");
+        const found = res.data.find((g: any) => g.name.toLowerCase().includes(id));
+        if (found) {
+          setGh({
+            id: id as any,
+            name: found.name,
+            location: found.address || "Corporate Colony",
+            description: found.description || "Premium company guest house.",
+            image: found.name.toLowerCase().includes("vasundra")
+              ? "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80"
+              : "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=1200&q=80",
+            facilities: found.amenities || ["Wi-Fi", "Parking", "Security", "Food", "Housekeeping", "Reception"],
+            availableRooms: found.total_rooms || 10
+          });
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [id]);
 
   const scrollRules = () => document.getElementById("rules")?.scrollIntoView({ behavior: "smooth" });
+
+  if (loading) {
+    return (
+      <DashboardLayout requiredRole="employee">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading details...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!gh) return <DashboardLayout requiredRole="employee"><p>Guest house not found.</p></DashboardLayout>;
+
 
   return (
     <DashboardLayout requiredRole="employee">

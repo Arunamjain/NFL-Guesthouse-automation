@@ -16,12 +16,8 @@ export function QRPassCard({ b }: { b: Booking }) {
         </div>
       </div>
       <div className="p-6 flex flex-col sm:flex-row gap-6 items-center">
-        <div className="size-40 rounded-lg bg-white border-4 border-primary/20 p-2 flex items-center justify-center shadow-inner">
-          <div className="grid grid-cols-8 gap-px w-full h-full">
-            {Array.from({ length: 64 }).map((_, i) => (
-              <div key={i} className={i % 3 === 0 || i % 7 === 0 ? "bg-foreground" : "bg-transparent"} />
-            ))}
-          </div>
+        <div className="size-40 rounded-lg bg-white border-4 border-primary/20 p-2 flex items-center justify-center shadow-inner overflow-hidden">
+          <img src={`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/qr/${b.id}/image`} alt="Booking QR Pass" className="w-full h-full object-contain" />
         </div>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm flex-1">
           <dt className="text-muted-foreground">Employee</dt><dd className="font-medium">{b.employeeName}</dd>

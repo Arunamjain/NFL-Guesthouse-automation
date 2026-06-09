@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -12,15 +12,87 @@ import { SelectField } from "@/components/forms/SelectField";
 import { useApp } from "@/lib/app-store";
 import type { Booking } from "@/types";
 import { formatINR, formatDate } from "@/utils/formatters";
+import { getBookings } from "@/services/bookingService";
+import { getPayments, verifyPayment, rejectPayment } from "@/services/paymentService";
 
 export const Route = createFileRoute("/admin/payments")({ component: PaymentVerification });
 
+type MergedBooking = Booking & { paymentId?: string };
+
 function PaymentVerification() {
-  const { bookings, updateBooking } = useApp();
+  const { currentUser } = useApp();
+  const [bookings, setBookings] = useState<MergedBooking[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("Verification Pending");
-  const [view, setView] = useState<Booking | null>(null);
-  const [reject, setReject] = useState<Booking | null>(null);
+  const [view, setView] = useState<MergedBooking | null>(null);
+  const [reject, setReject] = useState<MergedBooking | null>(null);
   const [reason, setReason] = useState("");
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [bookingsData, paymentsData] = await Promise.all([
+        getBookings(),
+        getPayments()
+      ]);
+
+      // Merge payment info into bookings
+      const merged: MergedBooking[] = bookingsData.map((b) => {
+        const payment = paymentsData.find((p: any) => p.booking_id === b.id);
+        if (payment) {
+          return {
+            ...b,
+            paymentId: payment.id,
+            amount: payment.amount || b.amount,
+            utr: payment.utr_number || b.utr,
+            paymentMode: "UPI", // Default mode
+            paymentStatus: (payment.status === "verified" ? "Payment Verified" : payment.status === "rejected" ? "Failed" : "Payment Verification Pending") as import("@/types").PaymentStatus
+          };
+        }
+        return b;
+      });
+
+      setBookings(merged);
+      setPayments(paymentsData);
+    } catch (err) {
+      toast.error("Failed to load payments data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const verify = async (b: MergedBooking) => {
+    const pId = b.paymentId || payments.find((p) => p.booking_id === b.id)?.id;
+    if (!pId) return toast.error("Payment record not found");
+    try {
+      await verifyPayment(pId, currentUser?.id || "");
+      toast.success("Payment verified. Booking confirmed.");
+      setView(null);
+      loadData();
+    } catch (err) {
+      toast.error("Failed to verify payment");
+    }
+  };
+
+  const doReject = async () => {
+    if (!reject || !reason.trim()) return toast.error("Reason required");
+    const pId = reject.paymentId || payments.find((p) => p.booking_id === reject.id)?.id;
+    if (!pId) return toast.error("Payment record not found");
+    try {
+      await rejectPayment(pId, reason, currentUser?.id || "");
+      toast.success("Payment rejected.");
+      setReject(null);
+      setReason("");
+      loadData();
+    } catch (err) {
+      toast.error("Failed to reject payment");
+    }
+  };
 
   const rows = useMemo(() => bookings.filter((b) => {
     if (filter === "All") return ["Payment Verification Pending", "Payment Verified", "Failed"].includes(b.paymentStatus);
@@ -30,19 +102,18 @@ function PaymentVerification() {
     return true;
   }), [bookings, filter]);
 
-  const verify = (b: Booking) => {
-    updateBooking(b.id, { paymentStatus: "Payment Verified", bookingStatus: "Confirmed", qrGenerated: true, emailSent: true });
-    toast.success("Payment verified. Booking confirmed and email sent to employee.");
-    setView(null);
-  };
-  const doReject = () => {
-    if (!reject || !reason.trim()) return toast.error("Reason required");
-    updateBooking(reject.id, { paymentStatus: "Failed", hrRemarks: reason });
-    toast.success("Payment rejected. Employee must resubmit payment details.");
-    setReject(null); setReason("");
-  };
+  if (loading) {
+    return (
+      <DashboardLayout requiredRole="admin">
+        <PageHeader title="Payment Verification" subtitle="Verify employee UTRs and confirm bookings." />
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading payments...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
-  const cols: Column<Booking>[] = [
+  const cols: Column<MergedBooking>[] = [
     { key: "id", header: "Booking ID", render: (b) => <span className="font-mono text-xs">{b.id}</span> },
     { key: "e", header: "Employee", render: (b) => b.employeeName },
     { key: "gh", header: "Guest House", render: (b) => b.guestHouseName },

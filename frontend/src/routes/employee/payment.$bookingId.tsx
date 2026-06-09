@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Banknote, CreditCard, Smartphone, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -12,8 +12,9 @@ import { BookingStepper } from "@/components/dashboard/BookingStepper";
 import { PaymentOptionCard } from "@/components/payment/PaymentOptionCard";
 import { Modal } from "@/components/common/Modal";
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { useApp } from "@/lib/app-store";
 import { formatINR, formatDate } from "@/utils/formatters";
+import { getBookings } from "@/services/bookingService";
+import { submitPayment } from "@/services/paymentService";
 
 export const Route = createFileRoute("/employee/payment/$bookingId")({ component: PaymentPage });
 
@@ -21,22 +22,51 @@ const STEPS = ["Payment Started", "UTR Submitted", "Verification Pending", "Paym
 
 function PaymentPage() {
   const { bookingId } = Route.useParams();
-  const { bookings, updateBooking } = useApp();
   const navigate = useNavigate();
-  const b = bookings.find((x) => x.id === bookingId);
-  const [method, setMethod] = useState<"upi" | "card" | "nb" | "wallet">("upi");
+  const [b, setB] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [method, setMethod] = useState<"upi" | "card" | "nb" | "wallet" | any>("upi");
   const [utr, setUtr] = useState("");
   const [remarks, setRemarks] = useState("");
   const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    getBookings()
+      .then((list) => {
+        const found = list.find((x) => x.id === bookingId);
+        setB(found || null);
+      })
+      .catch((err) => console.error("Failed to load booking", err))
+      .finally(() => setLoading(false));
+  }, [bookingId]);
+
+  if (loading) {
+    return (
+      <DashboardLayout requiredRole="employee">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading payment details...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   if (!b) return <DashboardLayout requiredRole="employee"><p>Booking not found.</p></DashboardLayout>;
 
   const step = b.paymentStatus === "Payment Verified" ? 3 : b.paymentStatus === "Payment Verification Pending" ? 2 : utr ? 1 : 0;
 
-  const submit = () => {
+  const submit = async () => {
     if (!utr.trim()) return toast.error("Please enter UTR / Transaction ID.");
-    updateBooking(b.id, { paymentStatus: "Payment Verification Pending", bookingStatus: "Payment Verification Pending", utr, paymentMode: method.toUpperCase() });
-    setSuccess(true);
+    try {
+      await submitPayment(b.id, {
+        amount: b.amount,
+        utr,
+        mode: method.toUpperCase(),
+        remarks
+      });
+      setSuccess(true);
+    } catch (err) {
+      toast.error("Failed to submit payment details");
+    }
   };
 
   return (

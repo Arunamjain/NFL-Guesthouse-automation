@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -11,6 +11,8 @@ import { BookingStepper } from "@/components/dashboard/BookingStepper";
 import { Modal } from "@/components/common/Modal";
 import { useApp } from "@/lib/app-store";
 import type { Booking, EmployeeCategory, GuestHouseId } from "@/types";
+import { createBooking } from "@/services/bookingService";
+import { api } from "@/services/api";
 
 export const Route = createFileRoute("/employee/new-booking")({
   validateSearch: (s: Record<string, unknown>): { gh?: GuestHouseId } => ({
@@ -23,10 +25,11 @@ const STEPS = ["Employee Details", "Stay Details", "Review & Submit"];
 
 function NewBookingPage() {
   const { gh: ghParam } = Route.useSearch();
-  const { currentUser, addBooking } = useApp();
+  const { currentUser } = useApp();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [success, setSuccess] = useState(false);
+  const [ghList, setGhList] = useState<any[]>([]);
   const [form, setForm] = useState({
     employeeId: currentUser?.id ?? "",
     name: currentUser?.name ?? "",
@@ -42,6 +45,12 @@ function NewBookingPage() {
     requirements: "",
   });
 
+  useEffect(() => {
+    api.get("/admin/guest-houses")
+      .then((res) => setGhList(res.data))
+      .catch((err) => console.error("Error fetching guest houses", err));
+  }, []);
+
   const ghName = form.guestHouseId === "vasundra" ? "Vasundra Guest House" : "Dangoti Guest House";
   const eligibility = form.category === "Executive Employee"
     ? "Eligible for Executive Suite/Executive Room, subject to HR approval."
@@ -56,21 +65,24 @@ function NewBookingPage() {
     setStep((s) => s + 1);
   };
 
-  const submit = () => {
-    const booking: Booking = {
-      id: `BKG-${Math.floor(1000 + Math.random() * 9000)}`,
-      employeeId: form.employeeId, employeeName: form.name, employeeEmail: form.email,
-      department: form.department, designation: form.designation, category: form.category,
-      guestHouseId: form.guestHouseId, guestHouseName: ghName,
-      checkIn: form.checkIn, checkOut: form.checkOut, guests: form.guests,
-      purpose: form.purpose, requirements: form.requirements,
-      hrStatus: "Pending Approval", paymentStatus: "Not Started", bookingStatus: "Pending Approval",
-      amount: form.category === "Executive Employee" ? 7000 : 2800,
-      emailSent: false, qrGenerated: false,
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-    addBooking(booking);
-    setSuccess(true);
+  const submit = async () => {
+    try {
+      const ghItem = ghList.find((g) => g.name.toLowerCase().includes(form.guestHouseId));
+      const ghUuid = ghItem ? ghItem.id : form.guestHouseId;
+
+      await createBooking({
+        employeeId: form.employeeId,
+        guestHouseId: ghUuid,
+        checkIn: form.checkIn,
+        checkOut: form.checkOut,
+        purpose: form.purpose,
+        guests: form.guests,
+      });
+      setSuccess(true);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to submit booking request. Please check room availability for selected dates.");
+    }
   };
 
   return (
