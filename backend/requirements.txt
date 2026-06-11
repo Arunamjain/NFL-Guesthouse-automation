@@ -9,3 +9,4 @@ bcrypt==5.0.0
 qrcode==8.2
 httpx==0.28.1
 python-dateutil==2.9.0.post0
+slowapi
