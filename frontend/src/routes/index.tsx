@@ -41,11 +41,24 @@ function LandingPage() {
             <p className="mt-4 text-base md:text-lg text-primary-foreground/80 max-w-xl">
               Book guest house stays, request HR approval, complete payments, and receive QR-based booking confirmation through one digital platform.
             </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Button size="lg" onClick={() => navigate({ to: "/login", search: { role: "employee" } })} leftIcon={<LogIn className="size-4" />}>Employee Login</Button>
-              <Button size="lg" variant="secondary" onClick={() => navigate({ to: "/login", search: { role: "admin" } })}>Admin / HR Login</Button>
-              <Button size="lg" variant="ghost" className="text-primary-foreground hover:bg-white/10" onClick={scrollToGH}>View Guest Houses</Button>
-            </div>
+           <div className="mt-7 flex flex-wrap gap-3">
+  <Button
+    size="lg"
+    onClick={() => navigate({ to: "/login" })}
+    leftIcon={<LogIn className="size-4" />}
+  >
+    Login
+  </Button>
+
+  <Button
+    size="lg"
+    variant="ghost"
+    className="text-primary-foreground hover:bg-white/10"
+    onClick={scrollToGH}
+  >
+    View Guest Houses
+  </Button>
+</div>
           </div>
           <div className="hidden lg:block">
             <img src="https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80" alt="Guest house" className="rounded-2xl shadow-2xl ring-1 ring-white/20" />
